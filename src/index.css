@@ -1,0 +1,253 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #020617 100%);
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --primary: #6366f1;
+  --primary-hover: #4f46e5;
+  --accent: #d946ef;
+  --glass-bg: rgba(30, 41, 59, 0.45);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --card-bg: rgba(15, 23, 42, 0.6);
+  --danger: #ef4444;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --info: #06b6d4;
+  --radius: 16px;
+  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-gradient);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app-container {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+/* Glassmorphism Card Utility */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--glass-shadow);
+  padding: 2rem;
+  transition: var(--transition);
+}
+
+.glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 12px 40px 0 rgba(99, 102, 241, 0.15);
+}
+
+/* Typography & Layouts */
+h1 {
+  font-weight: 800;
+  font-size: 2.5rem;
+  background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 1.5rem;
+}
+
+h2 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 1.25rem;
+}
+
+h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 1rem;
+}
+
+p {
+  color: var(--text-secondary);
+}
+
+/* Form Styles */
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+input, select, textarea {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  transition: var(--transition);
+}
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 1.25em;
+  padding-right: 2.5rem;
+}
+
+select option {
+  background-color: #0f172a;
+  color: #f8fafc;
+  padding: 10px;
+}
+
+select option:hover, select option:focus, select option:active {
+  background-color: var(--primary) !important;
+  color: #fff !important;
+}
+
+
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+  background: rgba(15, 23, 42, 0.95);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 120px;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: 12px;
+  cursor: pointer;
+  border: none;
+  transition: var(--transition);
+  font-family: var(--font-sans);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary) 0%, #4f46e5 100%);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.6);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid var(--glass-border);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-new { background: rgba(99, 102, 241, 0.15); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.3); }
+.badge-contacted { background: rgba(6, 182, 212, 0.15); color: #67e8f9; border: 1px solid rgba(6, 182, 212, 0.3); }
+.badge-visit { background: rgba(245, 158, 11, 0.15); color: #fde047; border: 1px solid rgba(245, 158, 11, 0.3); }
+.badge-converted { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); }
+.badge-nointerest { background: rgba(239, 68, 110, 0.15); color: #fda4af; border: 1px solid rgba(239, 68, 110, 0.3); }
+
+/* Table View */
+.table-container {
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+th {
+  background: rgba(15, 23, 42, 0.8);
+  padding: 1rem 1.25rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--glass-border);
+}
+
+td {
+  padding: 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 0.95rem;
+}
+
+tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
