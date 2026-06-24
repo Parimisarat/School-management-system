@@ -429,10 +429,11 @@ $$ language plpgsql security definer stable;
 -- ============================================================================
 
 -- Enable RLS on all tables
-alter table public.schools enable row level security;
+-- Disable RLS on public lookup tables to allow anonymous registration queries
+alter table public.schools disable row level security;
+alter table public.classes disable row level security;
 alter table public.profiles enable row level security;
 alter table public.user_roles enable row level security;
-alter table public.classes enable row level security;
 alter table public.sections enable row level security;
 alter table public.students enable row level security;
 alter table public.enquiries enable row level security;

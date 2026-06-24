@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import EnquiryDetails from './EnquiryDetails';
 import { Download, Search, Filter, Calendar, Users, Eye, Percent } from 'lucide-react';
 
-export default function AdminDashboard() {
+interface AdminDashboardProps {
+  onSelectEnquiry: (id: string) => void;
+}
+
+export default function AdminDashboard({ onSelectEnquiry }: AdminDashboardProps) {
   const [enquiries, setEnquiries] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,9 +25,6 @@ export default function AdminDashboard() {
   const [classFilter, setClassFilter] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-
-  // Selected enquiry for side drawer/detail modal
-  const [selectedEnquiryId, setSelectedEnquiryId] = useState<string | null>(null);
 
   // Fetch initial setup and enquiries
   useEffect(() => {
@@ -274,7 +274,7 @@ export default function AdminDashboard() {
                     </td>
                     <td>{new Date(e.created_at).toLocaleDateString()}</td>
                     <td>
-                      <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} onClick={() => setSelectedEnquiryId(e.id)}>
+                      <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} onClick={() => onSelectEnquiry(e.id)}>
                         <Eye size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} /> Details
                       </button>
                     </td>
@@ -283,19 +283,6 @@ export default function AdminDashboard() {
               </tbody>
             </table>
           </div>
-        </div>
-      )}
-
-      {/* Detail overlay drawer */}
-      {selectedEnquiryId && (
-        <div style={{ position: 'fixed', top: 0, right: 0, width: '450px', height: '100vh', background: 'rgba(15,23,42,0.98)', borderLeft: '1px solid var(--glass-border)', boxShadow: '-10px 0 30px rgba(0,0,0,0.5)', zIndex: 1000, overflowY: 'auto' }} className="fade-in">
-          <EnquiryDetails
-            enquiryId={selectedEnquiryId}
-            onClose={() => {
-              setSelectedEnquiryId(null);
-              fetchEnquiries();
-            }}
-          />
         </div>
       )}
     </div>
