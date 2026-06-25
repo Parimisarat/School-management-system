@@ -5,7 +5,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import EnquiryDetailsPage from './pages/EnquiryDetailsPage';
 import AdmissionDashboard from './pages/AdmissionDashboard';
 import AdmissionDetailsPage from './pages/AdmissionDetailsPage';
-
+//vishnu
 // Auth pages
 import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
