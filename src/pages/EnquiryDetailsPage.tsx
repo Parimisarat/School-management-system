@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { ArrowLeft, Save, User, Phone, Mail, BookOpen, Clock, FileText, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, User, Phone, BookOpen, Clock, FileText, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 interface EnquiryDetailsPageProps {
   enquiryId: string;
@@ -170,6 +170,15 @@ export default function EnquiryDetailsPage({ enquiryId, onBack }: EnquiryDetails
       const firstName = enquiry.student_name.split(' ')[0] || enquiry.student_name;
       const lastName = enquiry.student_name.split(' ').slice(1).join(' ') || 'Doe';
 
+      const initialTimeline = [
+        {
+          event: 'Admission Created',
+          timestamp: new Date().toISOString(),
+          staff: staffName,
+          description: 'Admission record created automatically from enquiry conversion.'
+        }
+      ];
+
       const { data: admissionRecord, error: admissionErr } = await supabase
         .from('admissions')
         .insert([
@@ -184,15 +193,18 @@ export default function EnquiryDetailsPage({ enquiryId, onBack }: EnquiryDetails
             parent_name: enquiry.parent_name,
             parent_phone: enquiry.phone,
             parent_email: enquiry.email,
-            status: 'Pending'
+            status: 'Draft',
+            activity_log: initialTimeline
           }
         ])
         .select();
 
       if (admissionErr) throw admissionErr;
 
+      const newAdmissionId = admissionRecord?.[0]?.id;
+
       const timestamp = new Date().toLocaleString();
-      const updatedNotes = `[${timestamp} - By ${staffName}]: Enquiry converted to admission successfully. Admission Code: ${admissionRecord?.[0]?.id || ''}\n\n${enquiry.notes || ''}`;
+      const updatedNotes = `[${timestamp} - By ${staffName}]: Enquiry converted to admission successfully. Admission Code: ${newAdmissionId || ''}\n\n${enquiry.notes || ''}`;
 
       const { error: enquiryErr } = await supabase
         .from('enquiries')
@@ -206,7 +218,11 @@ export default function EnquiryDetailsPage({ enquiryId, onBack }: EnquiryDetails
       if (enquiryErr) throw enquiryErr;
 
       alert('Enquiry successfully converted to Admission entry!');
-      fetchEnquiryDetails();
+      if (newAdmissionId) {
+        window.location.hash = `#/admissions/${newAdmissionId}`;
+      } else {
+        fetchEnquiryDetails();
+      }
     } catch (err: any) {
       alert(`Failed to convert enquiry: ${err.message}`);
     } finally {
