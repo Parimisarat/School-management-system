@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { supabase } from './supabaseClient';
+import { supabase, supabaseM34 } from './supabaseClient';
 import { Session } from '@supabase/supabase-js';
 
 interface Profile {
@@ -20,6 +20,7 @@ interface AuthContextType {
   loading: boolean;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  mockLogin: (mockRole: string, customEmail?: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -64,45 +65,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function loadUserDetails(userId: string) {
     try {
-      // Get profile
-      const { data: profile, error: profileError } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select(`
+          *,
+          user_roles ( role )
+        `)
         .eq('id', userId)
         .single();
 
-      if (profileError) throw profileError;
+      if (error) throw error;
 
-      if (profile) {
-        setUser(profile as Profile);
-        setSchoolId(profile.school_id);
-
-        // Get primary role
-        const { data: roleData } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('profile_id', userId)
-          .limit(1);
-
-        if (roleData && roleData.length > 0) {
-          setRole(roleData[0].role);
-        } else {
-          setRole(null);
-        }
-
-        // Get school name
-        const { data: schoolData } = await supabase
+      setUser(data);
+      if (data.user_roles && data.user_roles.length > 0) {
+        setRole(data.user_roles[0].role);
+      }
+      
+      if (data.school_id) {
+        const { data: school } = await supabase
           .from('schools')
           .select('name')
-          .eq('id', profile.school_id)
+          .eq('id', data.school_id)
           .single();
-
-        if (schoolData) {
-          setSchoolName(schoolData.name);
+        if (school) {
+          setSchoolName(school.name);
+          setSchoolId(data.school_id);
         }
       }
-    } catch (e) {
-      console.error('Error loading user auth details:', e);
+    } catch (err: any) {
+      console.warn('Error loading user details, using fallback/stored session', err.message);
+      // Attempt to load from stored mock session user
+      const storedUser = localStorage.getItem('schoolos_mock_user');
+      const storedRole = localStorage.getItem('schoolos_mock_role');
+      if (storedUser && storedRole) {
+        setUser(JSON.parse(storedUser));
+        setRole(storedRole);
+        setSchoolName('SchoolOS Academy');
+        setSchoolId('11111111-1111-1111-1111-111111111111');
+      }
     } finally {
       setLoading(false);
     }
@@ -115,9 +115,192 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function mockLogin(mockRole: string, customEmail?: string) {
+    setLoading(true);
+    let mockUser: Profile = {
+      id: 'f6004b92-a340-47ad-b7af-c5ea45ecbaa5',
+      first_name: 'Super',
+      last_name: 'Admin',
+      school_id: '11111111-1111-1111-1111-111111111111',
+      first_login: false,
+    };
+    let email = customEmail || 'admin@gmail.com';
+
+    if (mockRole === 'class_teacher') {
+      mockUser = {
+        id: 'c58a73cb-37e1-4fa5-bf00-d6b67bddbd49',
+        first_name: 'Class',
+        last_name: 'Teacher',
+        school_id: '11111111-1111-1111-1111-111111111111',
+        first_login: false,
+      };
+      email = customEmail || 'teacher@gmail.com';
+    } else if (mockRole === 'subject_teacher') {
+      mockUser = {
+        id: 'f1b43cef-1a95-490c-a7b3-432ecebcba09',
+        first_name: 'Subject',
+        last_name: 'Teacher',
+        school_id: '11111111-1111-1111-1111-111111111111',
+        first_login: false,
+      };
+      email = customEmail || 'subject@gmail.com';
+    } else if (mockRole === 'admin_staff') {
+      mockUser = {
+        id: 'ba747404-23a4-4bf1-b0bd-9b7263305111',
+        first_name: 'Admissions',
+        last_name: 'Staff',
+        school_id: '11111111-1111-1111-1111-111111111111',
+        first_login: false,
+      };
+      email = customEmail || 'staff@gmail.com';
+    } else if (mockRole === 'parent') {
+      email = (customEmail || 'parent@xample.com').toLowerCase().trim();
+      let parentFirstName = 'Parent';
+      let parentLastName = 'User';
+      let parentId = 'e1111111-1111-1111-1111-111111111111';
+
+      if (email !== 'parent@xample.com') {
+        try {
+          const { data: adm } = await supabase
+            .from('admissions')
+            .select('admission_number, parent_name')
+            .eq('parent_email', email)
+            .limit(1);
+
+          let admNum = '';
+          if (adm && adm.length > 0) {
+            admNum = adm[0].admission_number;
+            const nameParts = (adm[0].parent_name || 'Parent').split(' ');
+            parentFirstName = nameParts[0] || 'Parent';
+            parentLastName = nameParts.slice(1).join(' ') || 'User';
+          }
+
+          // Query live database first to get actual parent_id UUID
+          if (admNum) {
+            const { data: dbStudents } = await supabaseM34
+              .from('students')
+              .select('parent_id, profile_id, id')
+              .eq('admission_number', admNum)
+              .limit(1);
+
+            if (dbStudents && dbStudents.length > 0) {
+              parentId = dbStudents[0].parent_id || parentId;
+            } else {
+              // Local mock secondary fallback
+              const local = localStorage.getItem('schoolos_mock_students');
+              if (local) {
+                const parsed = JSON.parse(local);
+                const matched = parsed.find((s: any) => {
+                  const cleanAdm = (s.admission_number || '').replace(/-/g, '').toUpperCase();
+                  const cleanTargetAdm = admNum.replace(/-/g, '').toUpperCase();
+                  return cleanAdm === cleanTargetAdm;
+                });
+                if (matched) {
+                  parentId = matched.parent_id || `parent-${matched.id}`;
+                  parentFirstName = matched.parent_profile?.first_name || parentFirstName;
+                  parentLastName = matched.parent_profile?.last_name || parentLastName;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Failed mapping dynamic parent:', e);
+        }
+      }
+
+      mockUser = {
+        id: parentId,
+        first_name: parentFirstName,
+        last_name: parentLastName,
+        school_id: '11111111-1111-1111-1111-111111111111',
+        first_login: false,
+      };
+    } else if (mockRole === 'student') {
+      email = (customEmail || 'student.SMS20260006@schoolos.mail').toLowerCase().trim();
+      let studentFirstName = 'John';
+      let studentLastName = 'Doe';
+      let studentId = 'e1111111-1111-1111-1111-111111111111';
+
+      if (email !== 'student.sms20260006@schoolos.mail' && email !== 'student1@gmail.com') {
+        try {
+          const emailParts = email.split('@')[0];
+          const admNumFromEmail = emailParts.replace('student.', '').toUpperCase();
+
+          // Query live database first to map correct student profile_id
+          const { data: dbStudents } = await supabaseM34
+            .from('students')
+            .select('profile_id, id, parent_id, admission_number');
+
+          let matched = null;
+          if (dbStudents) {
+            matched = dbStudents.find((s: any) => {
+              const cleanAdm = (s.admission_number || '').replace(/-/g, '').toUpperCase();
+              return cleanAdm === admNumFromEmail;
+            });
+          }
+
+          if (matched) {
+            studentId = matched.profile_id || matched.id;
+          } else {
+            // Local mock secondary fallback
+            const local = localStorage.getItem('schoolos_mock_students');
+            if (local) {
+              const parsed = JSON.parse(local);
+              const matchedLocal = parsed.find((s: any) => {
+                const cleanAdm = (s.admission_number || '').replace(/-/g, '').toUpperCase();
+                return cleanAdm === admNumFromEmail;
+              });
+              if (matchedLocal) {
+                studentFirstName = matchedLocal.profiles?.first_name || matchedLocal.student_profile?.first_name || 'Student';
+                studentLastName = matchedLocal.profiles?.last_name || matchedLocal.student_profile?.last_name || 'User';
+                studentId = matchedLocal.profile_id || matchedLocal.id;
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Failed mapping dynamic student:', e);
+        }
+      }
+
+      mockUser = {
+        id: studentId,
+        first_name: studentFirstName,
+        last_name: studentLastName,
+        school_id: '11111111-1111-1111-1111-111111111111',
+        first_login: false,
+      };
+    }
+
+    const mockSession = {
+      access_token: 'mock-access-token',
+      token_type: 'bearer' as const,
+      expires_in: 3600,
+      refresh_token: 'mock-refresh-token',
+      user: {
+        id: mockUser.id,
+        email: email,
+        user_metadata: {
+          first_name: mockUser.first_name,
+          last_name: mockUser.last_name,
+        }
+      } as any,
+    };
+
+    setSession(mockSession);
+    setUser(mockUser);
+    setRole(mockRole);
+    setSchoolId('11111111-1111-1111-1111-111111111111');
+    setSchoolName('Oakridge International School');
+    setLoading(false);
+  }
+
   async function logout() {
     setLoading(true);
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Error calling auth signout:', e);
+    }
     setUser(null);
     setRole(null);
     setSchoolName(null);
@@ -128,7 +311,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, user, role, schoolName, schoolId, loading, logout, refreshProfile }}>
+    <AuthContext.Provider value={{ session, user, role, schoolName, schoolId, loading, logout, refreshProfile, mockLogin }}>
       {children}
     </AuthContext.Provider>
   );

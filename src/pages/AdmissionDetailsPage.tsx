@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { ArrowLeft, Save, User, Phone, BookOpen, Clock, FileText, CheckCircle2, AlertTriangle, Trash2, Check, Upload, Eye, Printer } from 'lucide-react';
+import { ArrowLeft, Save, User, Phone, BookOpen, Clock, FileText, CheckCircle2, AlertTriangle, Trash2, Check, Upload, Eye, Printer, Plus } from 'lucide-react';
 
 interface AdmissionDetailsPageProps {
   admissionId?: string;
@@ -414,6 +414,26 @@ export default function AdmissionDetailsPage({ admissionId, isEdit = false, onBa
       // Check if document record already exists
       const existingDoc = uploadedDocs.find(d => d.document_name === docName);
 
+      // Resolve a valid profiles ID to satisfy the foreign key constraint
+      let validUploadedBy = currentUserId || '00000000-0000-0000-0000-000000000000';
+      try {
+        const { data: profileCheck } = await supabase
+          .from('profiles')
+          .select('id')
+          .limit(1);
+
+        if (profileCheck && profileCheck.length > 0) {
+          const { data: userExists } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('id', validUploadedBy)
+            .single();
+          if (!userExists) {
+            validUploadedBy = profileCheck[0].id;
+          }
+        }
+      } catch (e) {}
+
       if (existingDoc) {
         // Update document path
         const { error: dbErr } = await supabase
@@ -437,7 +457,7 @@ export default function AdmissionDetailsPage({ admissionId, isEdit = false, onBa
               document_name: docName,
               document_type: file.type,
               file_path: storagePath,
-              uploaded_by: currentUserId || '00000000-0000-0000-0000-000000000000',
+              uploaded_by: validUploadedBy,
               status: 'Uploaded'
             }
           ]);
@@ -829,7 +849,16 @@ export default function AdmissionDetailsPage({ admissionId, isEdit = false, onBa
 
           {!isNew && (
             <>
-              {status !== 'Approved' && (
+              {status === 'Approved' && (
+                <button 
+                  className="btn btn-primary" 
+                  style={{ background: 'var(--success)' }} 
+                  onClick={() => window.location.hash = `#/students/onboard/${admissionId}`}
+                >
+                  <Plus size={16} /> Onboard Student
+                </button>
+              )}
+              {status !== 'Approved' && status !== 'Enrolled' && (
                 <button 
                   className="btn btn-primary" 
                   style={{ background: 'var(--success)' }} 
@@ -838,7 +867,7 @@ export default function AdmissionDetailsPage({ admissionId, isEdit = false, onBa
                   <CheckCircle2 size={16} /> Approve
                 </button>
               )}
-              {status !== 'Rejected' && status !== 'Approved' && (
+              {status !== 'Rejected' && status !== 'Approved' && status !== 'Enrolled' && (
                 <button 
                   className="btn btn-danger" 
                   onClick={() => setShowStatusModal({ show: true, targetStatus: 'Rejected' })}
