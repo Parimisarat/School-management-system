@@ -1,18 +1,49 @@
 import { useState, useEffect } from 'react';
 import { supabase, supabaseM34 } from '../lib/supabaseClient';
-import { Calendar, FileText, ShieldAlert, AlertCircle, Volume2 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
+import { 
+  Calendar, 
+  FileText, 
+  ShieldAlert, 
+  AlertCircle, 
+  Volume2, 
+  Clock, 
+  AlertTriangle 
+} from 'lucide-react';
+
+interface PtmEvent {
+  id: string;
+  title: string;
+  date: string;
+  description: string;
+  status: 'active' | 'cancelled';
+}
+
+interface PtmSlot {
+  id: string;
+  start_time: string;
+  end_time: string;
+  is_available: boolean;
+  is_booked_by_me: boolean;
+  booking_id?: string;
+  booking_notes?: string;
+}
+
+const formatTimeStr = (t: string) => {
+  if (!t) return '';
+  return t.substring(0, 5);
+};
 
 export default function ParentPortal() {
-  const { user } = useAuth();
+  const { user, schoolId } = useAuth();
   const [loading, setLoading] = useState(true);
   const [siblings, setSiblings] = useState<any[]>([]);
   const [selectedChild, setSelectedChild] = useState<any>(null);
   
-  // Tabs: 'dashboard' | 'attendance' | 'homework' | 'discipline' | 'notices' | 'messages'
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'homework' | 'discipline' | 'notices' | 'messages'>('dashboard');
+  // Tabs: 'dashboard' | 'attendance' | 'homework' | 'discipline' | 'notices' | 'messages' | 'ptm'
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'homework' | 'discipline' | 'notices' | 'messages' | 'ptm'>('dashboard');
 
-  // Sibling specific data
+  // Sibling specific data (Attendance, Homework, Notices, Messages)
   const [attendance, setAttendance] = useState<any[]>([]);
   const [attendanceStats, setAttendanceStats] = useState({
     present: 0,
@@ -26,13 +57,31 @@ export default function ParentPortal() {
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [notices, setNotices] = useState<any[]>([]);
   
-  // Mock data stubs
-  
   // Async messaging
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessageText, setNewMessageText] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
 
+  // ============================================================================
+  // PTM PORTAL SPECIFIC STATES
+  // ============================================================================
+  const [ptmSubTab, setPtmSubTab] = useState<'book' | 'history'>('book');
+  const [loadingEvents, setLoadingEvents] = useState(false);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [bookingInProgress, setBookingInProgress] = useState(false);
+
+  const [events, setEvents] = useState<PtmEvent[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>('');
+  const [slots, setSlots] = useState<PtmSlot[]>([]);
+  
+  // Active/Cancelled bookings notifications
+  const [cancelledBookings, setCancelledBookings] = useState<any[]>([]);
+  const [activeBooking, setActiveBooking] = useState<any | null>(null);
+  const [pastBookings, setPastBookings] = useState<any[]>([]);
+
+  // ============================================================================
+  // EFFECTS
+  // ============================================================================
   useEffect(() => {
     if (user?.id) {
       loadSiblings();
@@ -42,9 +91,25 @@ export default function ParentPortal() {
   useEffect(() => {
     if (selectedChild) {
       loadChildData();
+      fetchEvents();
+      fetchParentBookings();
     }
   }, [selectedChild]);
 
+  useEffect(() => {
+    if (selectedEventId && selectedChild) {
+      const classTeacherId = selectedChild.sections?.class_teacher_id;
+      if (classTeacherId) {
+        fetchSlots(selectedEventId, classTeacherId);
+      } else {
+        setSlots([]);
+      }
+    }
+  }, [selectedEventId, selectedChild]);
+
+  // ============================================================================
+  // LOAD SIBLINGS & MAIN DATA
+  // ============================================================================
   async function loadSiblings() {
     if (!user) return;
     setLoading(true);
@@ -54,7 +119,11 @@ export default function ParentPortal() {
         .select(`
           *,
           classes ( name ),
-          sections ( name ),
+          sections (
+            name,
+            class_teacher_id,
+            profiles:class_teacher_id ( first_name, last_name )
+          ),
           student_profile:profiles!students_profile_id_fkey ( first_name, last_name )
         `)
         .eq('parent_id', user.id);
@@ -195,7 +264,6 @@ export default function ParentPortal() {
 
   async function fetchNotices() {
     try {
-      // Notices targetting 'parent' role and child's class or general
       const { data: targetedNotices, error } = await supabase
         .from('notice_targets')
         .select(`
@@ -223,7 +291,6 @@ export default function ParentPortal() {
   }
 
   async function loadChildMocks() {
-    // Mock Async Messages (Module 8)
     setMessages([
       { id: '1', sender: 'parent', message_text: 'Hello teacher, I wanted to ask why the math assignment is due tomorrow instead of Friday?', created_at: '2026-06-23T14:30:00Z' },
       { id: '2', sender: 'teacher', message_text: 'Hello! We changed it because Friday is a holiday. The notice is on the Notice Board.', created_at: '2026-06-23T15:45:00Z' }
@@ -246,7 +313,6 @@ export default function ParentPortal() {
     setNewMessageText('');
     setSendingMsg(false);
 
-    // Auto mock reply after 1.5s
     setTimeout(() => {
       setMessages(prev => [
         ...prev,
@@ -265,6 +331,269 @@ export default function ParentPortal() {
     return data?.publicUrl || '#';
   };
 
+  // ============================================================================
+  // PTM BOOKING PORTAL LOGIC
+  // ============================================================================
+  async function fetchEvents() {
+    setLoadingEvents(true);
+    try {
+      const { data, error } = await supabase
+        .from('ptm_events')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('date', { ascending: false });
+
+      if (error) throw error;
+
+      const mappedEvents: PtmEvent[] = (data || []).map((e: any) => {
+        let isCancelled = e.status === 'cancelled' || e.title.startsWith('[CANCELLED]');
+        try {
+          const descObj = JSON.parse(e.description);
+          if (descObj.status === 'cancelled') isCancelled = true;
+        } catch (err) {}
+
+        return {
+          id: e.id,
+          title: e.title,
+          date: e.date,
+          description: e.description,
+          status: isCancelled ? 'cancelled' : 'active'
+        };
+      });
+
+      setEvents(mappedEvents);
+      if (mappedEvents.length > 0) {
+        setSelectedEventId(mappedEvents[0].id);
+      }
+    } catch (err: any) {
+      console.error('Error fetching events:', err.message);
+    } finally {
+      setLoadingEvents(false);
+    }
+  }
+
+  async function fetchParentBookings() {
+    try {
+      const { data, error } = await supabase
+        .from('ptm_bookings')
+        .select(`
+          id,
+          slot_id,
+          notes,
+          student_id,
+          ptm_slots (
+            id,
+            start_time,
+            end_time,
+            teacher_id,
+            profiles:teacher_id (first_name, last_name),
+            ptm_events (
+              id,
+              title,
+              date,
+              description
+            )
+          )
+        `)
+        .eq('parent_id', user?.id)
+        .eq('student_id', selectedChild.id);
+
+      if (error) throw error;
+
+      const active: any[] = [];
+      const cancelled: any[] = [];
+      const past: any[] = [];
+
+      data?.forEach((b: any) => {
+        const slot = b.ptm_slots;
+        const event = slot?.ptm_events;
+        const teacher = slot?.profiles;
+
+        let eventCancelled = false;
+        if (event) {
+          if (event.title.startsWith('[CANCELLED]')) {
+            eventCancelled = true;
+          }
+          try {
+            const descObj = JSON.parse(event.description);
+            if (descObj.status === 'cancelled') eventCancelled = true;
+          } catch (err) {}
+        }
+
+        const bookingInfo = {
+          booking_id: b.id,
+          slot_id: slot?.id,
+          notes: b.notes,
+          event_title: event?.title || 'PTM Meeting',
+          event_date: event?.date || '',
+          start_time: slot?.start_time || '',
+          end_time: slot?.end_time || '',
+          teacher_name: teacher ? `${teacher.first_name} ${teacher.last_name}` : 'Class Teacher'
+        };
+
+        if (eventCancelled || b.notes?.startsWith('[CANCELLED]')) {
+          cancelled.push(bookingInfo);
+        } else {
+          const meetingDate = new Date(`${event.date}T${slot.start_time}`);
+          if (meetingDate < new Date()) {
+            past.push(bookingInfo);
+          } else {
+            active.push(bookingInfo);
+          }
+        }
+      });
+
+      setCancelledBookings(cancelled);
+      setPastBookings(past);
+      setActiveBooking(active.length > 0 ? active[0] : null);
+    } catch (err: any) {
+      console.error('Error fetching parent bookings:', err.message);
+    }
+  }
+
+  async function fetchSlots(eventId: string, teacherId: string) {
+    setLoadingSlots(true);
+    try {
+      const { data, error } = await supabase
+        .from('ptm_slots')
+        .select('*')
+        .eq('event_id', eventId)
+        .eq('teacher_id', teacherId)
+        .order('start_time', { ascending: true });
+
+      if (error) throw error;
+
+      const { data: myBookings } = await supabase
+        .from('ptm_bookings')
+        .select('*')
+        .eq('parent_id', user?.id)
+        .eq('student_id', selectedChild.id);
+
+      const mappedSlots: PtmSlot[] = (data || []).map((slot: any) => {
+        const bookedByMe = myBookings?.find(b => b.slot_id === slot.id);
+        return {
+          id: slot.id,
+          start_time: slot.start_time,
+          end_time: slot.end_time,
+          is_available: slot.is_available,
+          is_booked_by_me: !!bookedByMe,
+          booking_id: bookedByMe?.id,
+          booking_notes: bookedByMe?.notes || ''
+        };
+      });
+
+      setSlots(mappedSlots);
+    } catch (err: any) {
+      console.error('Error fetching slots:', err.message);
+    } finally {
+      setLoadingSlots(false);
+    }
+  }
+
+  async function handleBookSlot(slot: PtmSlot) {
+    if (!selectedChild) return;
+    const teacherProfile = selectedChild.sections?.profiles;
+    const teacherName = teacherProfile ? `${teacherProfile.first_name} ${teacherProfile.last_name}` : 'Class Teacher';
+
+    if (activeBooking && activeBooking.event_date === events.find(e => e.id === selectedEventId)?.date) {
+      alert(`You have already booked a slot for this PTM event (${activeBooking.start_time} with ${activeBooking.teacher_name}). To change times, please cancel your existing booking first.`);
+      return;
+    }
+
+    const selectedEvent = events.find(e => e.id === selectedEventId);
+    if (selectedEvent) {
+      const slotDateTime = new Date(`${selectedEvent.date}T${slot.start_time}`);
+      if (slotDateTime < new Date()) {
+        alert('You cannot book a past time slot.');
+        return;
+      }
+    }
+
+    if (!confirm(`Confirm booking for slot ${formatTimeStr(slot.start_time)} - ${formatTimeStr(slot.end_time)} with Teacher ${teacherName}?`)) {
+      return;
+    }
+
+    setBookingInProgress(true);
+    try {
+      const { error } = await supabase
+        .from('ptm_bookings')
+        .insert([{
+          school_id: schoolId,
+          slot_id: slot.id,
+          student_id: selectedChild.id,
+          parent_id: user?.id,
+          notes: ''
+        }]);
+
+      if (error) {
+        if (error.code === '23505') {
+          throw new Error('This slot was just booked by another parent. Please refresh and select a different slot.');
+        }
+        throw error;
+      }
+
+      alert('Meeting booked successfully!');
+      fetchParentBookings();
+      const classTeacherId = selectedChild.sections?.class_teacher_id;
+      if (selectedEventId && classTeacherId) {
+        fetchSlots(selectedEventId, classTeacherId);
+      }
+    } catch (err: any) {
+      alert(`Booking failed: ${err.message}`);
+    } finally {
+      setBookingInProgress(false);
+    }
+  }
+
+  async function handleCancelBooking(bookingId: string, eventDate: string, startTimeStr: string) {
+    const current = new Date();
+    const slotDateTime = new Date(`${eventDate}T${startTimeStr}`);
+    const diffMs = slotDateTime.getTime() - current.getTime();
+    const diffHrs = diffMs / (1000 * 60 * 60);
+
+    if (diffHrs < 2) {
+      alert('Cannot cancel or change booking. Bookings are locked within 2 hours of the meeting time.');
+      return;
+    }
+
+    if (!confirm('Are you sure you want to cancel this booking? This will make the slot available for other parents.')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('ptm_bookings')
+        .delete()
+        .eq('id', bookingId);
+
+      if (error) throw error;
+
+      alert('Booking cancelled successfully.');
+      fetchParentBookings();
+      const classTeacherId = selectedChild.sections?.class_teacher_id;
+      if (selectedEventId && classTeacherId) {
+        fetchSlots(selectedEventId, classTeacherId);
+      }
+    } catch (err: any) {
+      alert(`Cancellation failed: ${err.message}`);
+    }
+  }
+
+  const handleDismissNotification = (id: string) => {
+    setCancelledBookings(prev => prev.filter(c => c.booking_id !== id));
+  };
+
+  const checkCancelAllowed = (eventDate: string, startTimeStr: string) => {
+    const current = new Date();
+    const slotDateTime = new Date(`${eventDate}T${startTimeStr}`);
+    const diffMs = slotDateTime.getTime() - current.getTime();
+    const diffHrs = diffMs / (1000 * 60 * 60);
+    return diffHrs >= 2;
+  };
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
   if (loading) {
     return (
       <div className="app-container" style={{ textAlign: 'center', padding: '5rem' }}>
@@ -291,6 +620,8 @@ export default function ParentPortal() {
   }
 
   const childName = `${selectedChild.student_profile?.first_name || ''} ${selectedChild.student_profile?.last_name || ''}`.trim();
+  const classTeacherProfile = selectedChild.sections?.profiles;
+  const classTeacherName = classTeacherProfile ? `${classTeacherProfile.first_name} ${classTeacherProfile.last_name}` : 'Unassigned';
 
   return (
     <div className="app-container fade-in">
@@ -299,7 +630,7 @@ export default function ParentPortal() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1>Parent Digital Portal</h1>
-          <p>Track academic progress, homework, attendance, and school announcements.</p>
+          <p>Track academic progress, homework, attendance, announcements, and book PTM meetings.</p>
         </div>
 
         {/* Sibling switcher */}
@@ -335,7 +666,6 @@ export default function ParentPortal() {
           <p style={{ margin: 0, fontSize: '0.85rem' }}>Class: {selectedChild.classes?.name} - {selectedChild.sections?.name}  |  Roll No: {selectedChild.roll_number || 'N/A'}</p>
         </div>
         
-        {/* Attendance warning badge */}
         {attendanceStats.total > 0 && attendanceStats.percentage < 75 && (
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#fda4af', background: 'rgba(239, 68, 68, 0.1)', padding: '0.4rem 0.8rem', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)', fontSize: '0.8rem' }}>
             <ShieldAlert size={14} style={{ color: 'var(--danger)' }} />
@@ -344,62 +674,130 @@ export default function ParentPortal() {
         )}
       </div>
 
-      {/* Grid of panels */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
-        
-        {/* Attendance widget */}
-        <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: 'rgba(15, 23, 42, 0.45)' }}>
-          <div style={{ display: 'flex', gap: '0.5rem', color: 'var(--primary)' }}>
-            <Calendar size={20} />
-            <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Attendance Rate</h3>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '0.5rem' }}>
-            <h2 style={{ fontSize: '2.5rem', margin: 0, color: attendanceStats.percentage >= 75 ? 'var(--success)' : 'var(--danger)' }}>{attendanceStats.percentage}%</h2>
-            <div>
-              <p style={{ fontSize: '0.8rem', margin: 0 }}>Present: {attendanceStats.present}</p>
-              <p style={{ fontSize: '0.8rem', margin: 0 }}>Absent: {attendanceStats.absent}</p>
+      {/* Cancellation Banner Alerts for PTM */}
+      {cancelledBookings.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '2rem' }}>
+          {cancelledBookings.map((c) => (
+            <div 
+              key={c.booking_id}
+              className="glass-card fade-in" 
+              style={{
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                padding: '1.25rem',
+                borderRadius: '12px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <AlertTriangle size={24} style={{ color: 'var(--danger)' }} />
+                <div>
+                  <h4 style={{ margin: 0, color: '#fca5a5', fontWeight: 700 }}>PTM Meeting Cancelled</h4>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                    Your meeting with <strong>{c.teacher_name}</strong> scheduled on <strong>{new Date(c.event_date).toLocaleDateString()}</strong> at <strong>{formatTimeStr(c.start_time)}</strong> has been cancelled by the teacher/admin.
+                  </p>
+                </div>
+              </div>
+              <button 
+                className="btn btn-secondary" 
+                style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}
+                onClick={() => handleDismissNotification(c.booking_id)}
+              >
+                Dismiss Notice
+              </button>
             </div>
-          </div>
-          <button className="btn btn-secondary" style={{ padding: '0.4rem', width: '100%', fontSize: '0.8rem', marginTop: 'auto' }} onClick={() => setActiveTab('attendance')}>
-            View Calendar Logs
-          </button>
+          ))}
         </div>
+      )}
 
-        {/* Homework Widget */}
-        <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: 'rgba(15, 23, 42, 0.45)' }}>
-          <div style={{ display: 'flex', gap: '0.5rem', color: 'var(--info)' }}>
-            <FileText size={20} />
-            <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Homework Assignments</h3>
+      {/* Grid of panels (Dashboard Overview) */}
+      {activeTab === 'dashboard' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
+          
+          {/* Attendance widget */}
+          <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: 'rgba(15, 23, 42, 0.45)' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', color: 'var(--primary)' }}>
+              <Calendar size={20} />
+              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Attendance Rate</h3>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '0.5rem' }}>
+              <h2 style={{ fontSize: '2.5rem', margin: 0, color: attendanceStats.percentage >= 75 ? 'var(--success)' : 'var(--danger)' }}>{attendanceStats.percentage}%</h2>
+              <div>
+                <p style={{ fontSize: '0.8rem', margin: 0 }}>Present: {attendanceStats.present}</p>
+                <p style={{ fontSize: '0.8rem', margin: 0 }}>Absent: {attendanceStats.absent}</p>
+              </div>
+            </div>
+            <button className="btn btn-secondary" style={{ padding: '0.4rem', width: '100%', fontSize: '0.8rem', marginTop: 'auto' }} onClick={() => setActiveTab('attendance')}>
+              View Calendar Logs
+            </button>
           </div>
-          <div style={{ marginTop: '0.5rem' }}>
-            <h2 style={{ fontSize: '2rem', margin: 0 }}>{homeworkList.length} Assigned</h2>
-            <p style={{ fontSize: '0.8rem', margin: '4px 0 0 0' }}>Pending Submissions: {homeworkList.length - submissions.length}</p>
+
+          {/* Homework Widget */}
+          <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: 'rgba(15, 23, 42, 0.45)' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', color: 'var(--info)' }}>
+              <FileText size={20} />
+              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Homework Assignments</h3>
+            </div>
+            <div style={{ marginTop: '0.5rem' }}>
+              <h2 style={{ fontSize: '2rem', margin: 0 }}>{homeworkList.length} Assigned</h2>
+              <p style={{ fontSize: '0.8rem', margin: '4px 0 0 0' }}>Pending Submissions: {homeworkList.length - submissions.length}</p>
+            </div>
+            <button className="btn btn-secondary" style={{ padding: '0.4rem', width: '100%', fontSize: '0.8rem', marginTop: 'auto' }} onClick={() => setActiveTab('homework')}>
+              View Due Assignments
+            </button>
           </div>
-          <button className="btn btn-secondary" style={{ padding: '0.4rem', width: '100%', fontSize: '0.8rem', marginTop: 'auto' }} onClick={() => setActiveTab('homework')}>
-            View Due Assignments
-          </button>
+
+          {/* PTM Booking Widget */}
+          <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: 'rgba(15, 23, 42, 0.45)' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', color: 'var(--primary)' }}>
+              <Clock size={20} style={{ color: 'var(--primary)' }} />
+              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Parent-Teacher Meetings</h3>
+            </div>
+            <div style={{ marginTop: '0.5rem' }}>
+              {activeBooking ? (
+                <>
+                  <h4 style={{ margin: 0, color: '#fff', fontSize: '0.95rem' }}>Booked: {activeBooking.event_title}</h4>
+                  <p style={{ fontSize: '0.8rem', margin: '4px 0 0 0', color: 'var(--text-secondary)' }}>
+                    With {activeBooking.teacher_name} at {formatTimeStr(activeBooking.start_time)} ({new Date(activeBooking.event_date).toLocaleDateString()})
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h2 style={{ fontSize: '2rem', margin: 0 }}>No Booking</h2>
+                  <p style={{ fontSize: '0.8rem', margin: '4px 0 0 0' }}>Select a time slot to meet teacher</p>
+                </>
+              )}
+            </div>
+            <button className="btn btn-secondary" style={{ padding: '0.4rem', width: '100%', fontSize: '0.8rem', marginTop: 'auto' }} onClick={() => setActiveTab('ptm')}>
+              {activeBooking ? 'Manage / Book Slot' : 'Book a Slot'}
+            </button>
+          </div>
+
+          {/* Notices Board Widget */}
+          <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: 'rgba(15, 23, 42, 0.45)' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', color: 'var(--warning)' }}>
+              <Volume2 size={20} style={{ color: 'var(--warning)' }} />
+              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>School Notices</h3>
+            </div>
+            <div style={{ marginTop: '0.5rem' }}>
+              <h2 style={{ fontSize: '2rem', margin: 0 }}>{notices.length} Updates</h2>
+              <p style={{ fontSize: '0.8rem', margin: '4px 0 0 0' }}>Latest announcements scoping child</p>
+            </div>
+            <button className="btn btn-secondary" style={{ padding: '0.4rem', width: '100%', fontSize: '0.8rem', marginTop: 'auto' }} onClick={() => setActiveTab('notices')}>
+              Open Notice Board
+            </button>
+          </div>
         </div>
+      )}
 
-        {/* Notices Board Widget */}
-        <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: 'rgba(15, 23, 42, 0.45)' }}>
-          <div style={{ display: 'flex', gap: '0.5rem', color: 'var(--warning)' }}>
-            <Volume2 size={20} style={{ color: 'var(--warning)' }} />
-            <h3 style={{ margin: 0, fontSize: '1.1rem' }}>School Notices</h3>
-          </div>
-          <div style={{ marginTop: '0.5rem' }}>
-            <h2 style={{ fontSize: '2rem', margin: 0 }}>{notices.length} Updates</h2>
-            <p style={{ fontSize: '0.8rem', margin: '4px 0 0 0' }}>Latest announcement today</p>
-          </div>
-          <button className="btn btn-secondary" style={{ padding: '0.4rem', width: '100%', fontSize: '0.8rem', marginTop: 'auto' }} onClick={() => setActiveTab('notices')}>
-            Open Notice Board
-          </button>
-        </div>
-      </div>
-
-      {/* Inner tabs details section */}
+      {/* ============================================================================
+          TAB: ATTENDANCE LOGS
+          ============================================================================ */}
       {activeTab === 'attendance' && (
         <div className="glass-card">
-          <h3 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>Attendance Calendar logs</h3>
+          <h3 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>Attendance Calendar Logs</h3>
           {attendance.length === 0 ? (
             <p>No attendance has been registered yet for this child.</p>
           ) : (
@@ -434,6 +832,9 @@ export default function ParentPortal() {
         </div>
       )}
 
+      {/* ============================================================================
+          TAB: HOMEWORK ASSIGNMENTS
+          ============================================================================ */}
       {activeTab === 'homework' && (
         <div className="glass-card">
           <h3 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>Homework Assignments & Submission Progress</h3>
@@ -480,6 +881,9 @@ export default function ParentPortal() {
         </div>
       )}
 
+      {/* ============================================================================
+          TAB: SCHOOL NOTICES
+          ============================================================================ */}
       {activeTab === 'notices' && (
         <div className="glass-card">
           <h3 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>School Notice Board Announcements</h3>
@@ -504,7 +908,9 @@ export default function ParentPortal() {
         </div>
       )}
 
-      {/* Messages tab */}
+      {/* ============================================================================
+          TAB: MESSAGES THREAD
+          ============================================================================ */}
       {activeTab === 'messages' && (
         <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <h3 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem' }}>Asynchronous Messaging Thread with Class Teacher</h3>
@@ -551,7 +957,206 @@ export default function ParentPortal() {
         </div>
       )}
 
-      {/* Show dashboards fallback navigation */}
+      {/* ============================================================================
+          TAB: PTM SCHEDULING PORTAL
+          ============================================================================ */}
+      {activeTab === 'ptm' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          
+          {/* Selector Subtabs */}
+          <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>
+            <button 
+              className={`btn ${ptmSubTab === 'book' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ padding: '0.4rem 1.25rem', fontSize: '0.8rem' }}
+              onClick={() => setPtmSubTab('book')}
+            >
+              Book Time Slot
+            </button>
+            <button 
+              className={`btn ${ptmSubTab === 'history' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ padding: '0.4rem 1.25rem', fontSize: '0.8rem' }}
+              onClick={() => setPtmSubTab('history')}
+            >
+              Meeting History & Feedback
+            </button>
+          </div>
+
+          {ptmSubTab === 'book' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem', alignItems: 'start' }}>
+              
+              {/* Left side: Event dropdown & active booking card */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <div className="glass-card">
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Select PTM Event</label>
+                    {loadingEvents ? (
+                      <p>Loading events...</p>
+                    ) : events.length === 0 ? (
+                      <p style={{ fontStyle: 'italic', fontSize: '0.85rem' }}>No PTM Meets scheduled by school administration.</p>
+                    ) : (
+                      <select 
+                        value={selectedEventId} 
+                        onChange={(e) => setSelectedEventId(e.target.value)}
+                        style={{ padding: '0.5rem' }}
+                      >
+                        {events.map(e => (
+                          <option key={e.id} value={e.id} disabled={e.status === 'cancelled'}>
+                            {e.title} {e.status === 'cancelled' ? '(Cancelled)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                </div>
+
+                {/* Active Booking Status */}
+                <div className="glass-card" style={{ border: activeBooking ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid var(--glass-border)' }}>
+                  <h4 style={{ margin: 0, borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', marginBottom: '0.75rem', color: '#fff' }}>
+                    Active Booking Status
+                  </h4>
+                  {activeBooking ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <p style={{ margin: 0, fontSize: '0.9rem' }}>
+                        Event: <strong>{activeBooking.event_title}</strong>
+                      </p>
+                      <p style={{ margin: 0, fontSize: '0.9rem' }}>
+                        Date: <strong>{new Date(activeBooking.event_date).toLocaleDateString()}</strong>
+                      </p>
+                      <p style={{ margin: 0, fontSize: '0.9rem' }}>
+                        Time: <strong style={{ color: 'var(--primary)' }}>{formatTimeStr(activeBooking.start_time)} - {formatTimeStr(activeBooking.end_time)}</strong>
+                      </p>
+                      <p style={{ margin: 0, fontSize: '0.9rem' }}>
+                        Teacher: <strong>{activeBooking.teacher_name}</strong>
+                      </p>
+                      
+                      <div style={{ marginTop: '0.5rem' }}>
+                        {checkCancelAllowed(activeBooking.event_date, activeBooking.start_time) ? (
+                          <button 
+                            className="btn btn-danger" 
+                            style={{ padding: '0.4rem', fontSize: '0.75rem', width: '100%' }}
+                            onClick={() => handleCancelBooking(activeBooking.booking_id, activeBooking.event_date, activeBooking.start_time)}
+                          >
+                            Cancel Booking
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', textAlign: 'center', background: 'rgba(255,255,255,0.03)', padding: '0.4rem', borderRadius: '4px' }}>
+                            🔒 Booking Locked (Within 2 Hours)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <p style={{ fontStyle: 'italic', fontSize: '0.85rem', margin: 0 }}>You have no active bookings for this child.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Right side: Slot Grid */}
+              <div className="glass-card">
+                <div style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem', marginBottom: '1.25rem' }}>
+                  <h3 style={{ margin: 0 }}>Available Meeting Slots</h3>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                    Book a 1-on-1 private slot with class teacher: <strong>{classTeacherName}</strong>
+                  </p>
+                </div>
+
+                {loadingSlots ? (
+                  <p style={{ textAlign: 'center', padding: '2rem' }}>Loading time slots...</p>
+                ) : !selectedChild.sections?.class_teacher_id ? (
+                  <p style={{ color: 'var(--warning)', fontStyle: 'italic' }}>
+                    No class teacher assigned to this student section. Slots cannot be booked.
+                  </p>
+                ) : slots.length === 0 ? (
+                  <p style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>
+                    No slots generated by the class teacher for this event.
+                  </p>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '0.75rem' }}>
+                    {slots.map((slot) => {
+                      const selectedEvent = events.find(e => e.id === selectedEventId);
+                      const isPast = selectedEvent ? new Date(`${selectedEvent.date}T${slot.start_time}`) < new Date() : false;
+                      const isBookedOther = !slot.is_available && !slot.is_booked_by_me;
+                      
+                      let btnText = formatTimeStr(slot.start_time);
+                      let btnClass = 'btn-secondary';
+                      let disabled = false;
+
+                      if (slot.is_booked_by_me) {
+                        btnText = `${formatTimeStr(slot.start_time)} (Booked)`;
+                        btnClass = 'btn-primary';
+                      } else if (isBookedOther || isPast || !slot.is_available) {
+                        disabled = true;
+                        btnText = `${formatTimeStr(slot.start_time)} (N/A)`;
+                      }
+
+                      return (
+                        <button
+                          key={slot.id}
+                          className={`btn ${btnClass}`}
+                          style={{ padding: '0.6rem 0.4rem', fontSize: '0.8rem', justifyContent: 'center' }}
+                          disabled={disabled || bookingInProgress}
+                          onClick={() => {
+                            if (!slot.is_booked_by_me) handleBookSlot(slot);
+                          }}
+                        >
+                          {btnText}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {ptmSubTab === 'history' && (
+            <div className="glass-card">
+              <h3 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem', marginBottom: '1.25rem' }}>
+                Meeting History & Teacher Feedback
+              </h3>
+              {pastBookings.length === 0 ? (
+                <p style={{ fontStyle: 'italic', color: 'var(--text-secondary)', margin: 0 }}>
+                  No past meeting history or feedback logs available.
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {pastBookings.map((b) => (
+                    <div 
+                      key={b.booking_id}
+                      style={{
+                        padding: '1.25rem',
+                        borderRadius: '12px',
+                        background: 'rgba(0,0,0,0.15)',
+                        border: '1px solid var(--glass-border)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                        <h4 style={{ margin: 0, color: '#fff', fontSize: '1rem' }}>{b.event_title}</h4>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                          {new Date(b.event_date).toLocaleDateString()} | {formatTimeStr(b.start_time)} - {formatTimeStr(b.end_time)}
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                        Teacher: <strong>{b.teacher_name}</strong>
+                      </p>
+                      <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                        <strong style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.25rem', color: 'var(--primary)' }}>
+                          Teacher Feedback / Action Items:
+                        </strong>
+                        <p style={{ margin: 0, fontSize: '0.9rem', color: '#e2e8f0', whiteSpace: 'pre-wrap' }}>
+                          {b.notes || 'No feedback notes recorded by teacher.'}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Back button overview helper */}
       {activeTab !== 'dashboard' && (
         <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '1.5rem' }}>
           <button className="btn btn-secondary" onClick={() => setActiveTab('dashboard')}>

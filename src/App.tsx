@@ -17,13 +17,14 @@ import TeacherDashboard from './pages/TeacherDashboard';
 import HomeworkDashboard from './pages/HomeworkDashboard';
 import ParentPortal from './pages/ParentPortal';
 import StudentPortal from './pages/StudentPortal';
+import AdminPtmDashboard from './pages/AdminPtmDashboard';
 import StudentDirectory from './pages/StudentDirectory';
 import StudentOnboarding from './pages/StudentOnboarding';
 import Student360Profile from './pages/Student360Profile';
 
 import { User, LogOut, Key, UserCheck } from 'lucide-react';
 
-type ViewType = 'public' | 'login' | 'forgot-password' | 'reset-password' | 'change-password' | 'admin' | 'enquiry-details' | 'admissions' | 'admission-new' | 'admission-details' | 'admission-edit' | 'teacher' | 'homework' | 'parent' | 'student' | 'students' | 'student-onboard' | 'student-details';
+type ViewType = 'public' | 'login' | 'forgot-password' | 'reset-password' | 'change-password' | 'admin' | 'enquiry-details' | 'admissions' | 'admission-new' | 'admission-details' | 'admission-edit' | 'teacher' | 'homework' | 'parent' | 'student' | 'admin-ptm' | 'students' | 'student-onboard' | 'student-details';
 
 function AppContent() {
   const { session, user, role, schoolName, loading, logout } = useAuth();
@@ -111,6 +112,8 @@ function AppContent() {
         setView('admissions');
       } else if (hash === '#/admin') {
         setView('admin');
+      } else if (hash === '#/admin/ptm') {
+        setView('admin-ptm');
       } else if (hash === '#/teacher') {
         setView('teacher');
       } else if (hash === '#/homework') {
@@ -169,6 +172,7 @@ function AppContent() {
       // Role authorization check
       const authRules: { [key in ViewType]?: string[] } = {
         'admin': ['super_admin'],
+        'admin-ptm': ['super_admin'],
         'enquiry-details': ['super_admin'],
         'admissions': ['super_admin', 'admin_staff'],
         'admission-new': ['super_admin', 'admin_staff'],
@@ -261,6 +265,16 @@ function AppContent() {
                     style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
                   >
                     Admissions
+                  </button>
+                  <button 
+                    className={`btn ${view === 'admin-ptm' ? 'btn-primary' : 'btn-secondary'}`} 
+                    onClick={() => {
+                      window.location.hash = '#/admin/ptm';
+                      setView('admin-ptm');
+                    }}
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                  >
+                    PTM Scheduling
                   </button>
                   <button 
                     className={`btn ${['students', 'student-onboard', 'student-details'].includes(view) ? 'btn-primary' : 'btn-secondary'}`} 
@@ -456,6 +470,7 @@ function AppContent() {
         {view === 'homework' && <HomeworkDashboard />}
         {view === 'parent' && <ParentPortal />}
         {view === 'student' && <StudentPortal />}
+        {view === 'admin-ptm' && <AdminPtmDashboard />}
       </main>
 
       {/* Profile Details Modal */}
