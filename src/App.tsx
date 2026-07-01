@@ -17,10 +17,11 @@ import TeacherDashboard from './pages/TeacherDashboard';
 import HomeworkDashboard from './pages/HomeworkDashboard';
 import ParentPortal from './pages/ParentPortal';
 import StudentPortal from './pages/StudentPortal';
+import AdminPtmDashboard from './pages/AdminPtmDashboard';
 
 import { User, LogOut, Key, UserCheck } from 'lucide-react';
 
-type ViewType = 'public' | 'login' | 'forgot-password' | 'reset-password' | 'change-password' | 'admin' | 'enquiry-details' | 'admissions' | 'admission-new' | 'admission-details' | 'admission-edit' | 'teacher' | 'homework' | 'parent' | 'student';
+type ViewType = 'public' | 'login' | 'forgot-password' | 'reset-password' | 'change-password' | 'admin' | 'enquiry-details' | 'admissions' | 'admission-new' | 'admission-details' | 'admission-edit' | 'teacher' | 'homework' | 'parent' | 'student' | 'admin-ptm';
 
 function AppContent() {
   const { session, user, role, schoolName, loading, logout } = useAuth();
@@ -90,6 +91,8 @@ function AppContent() {
         setView('admissions');
       } else if (hash === '#/admin') {
         setView('admin');
+      } else if (hash === '#/admin/ptm') {
+        setView('admin-ptm');
       } else if (hash === '#/teacher') {
         setView('teacher');
       } else if (hash === '#/homework') {
@@ -148,6 +151,7 @@ function AppContent() {
       // Role authorization check
       const authRules: { [key in ViewType]?: string[] } = {
         'admin': ['super_admin'],
+        'admin-ptm': ['super_admin'],
         'enquiry-details': ['super_admin'],
         'admissions': ['super_admin', 'admin_staff'],
         'admission-new': ['super_admin', 'admin_staff'],
@@ -237,6 +241,16 @@ function AppContent() {
                     style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
                   >
                     Admissions
+                  </button>
+                  <button 
+                    className={`btn ${view === 'admin-ptm' ? 'btn-primary' : 'btn-secondary'}`} 
+                    onClick={() => {
+                      window.location.hash = '#/admin/ptm';
+                      setView('admin-ptm');
+                    }}
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                  >
+                    PTM Scheduling
                   </button>
                 </>
               )}
@@ -396,6 +410,7 @@ function AppContent() {
         {view === 'homework' && <HomeworkDashboard />}
         {view === 'parent' && <ParentPortal />}
         {view === 'student' && <StudentPortal />}
+        {view === 'admin-ptm' && <AdminPtmDashboard />}
       </main>
 
       {/* Profile Details Modal */}
