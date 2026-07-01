@@ -51,6 +51,7 @@ export default function AdmissionDetailsPage({ admissionId, isEdit = false, onBa
   const [parentPhone, setParentPhone] = useState('');
   const [alternatePhone, setAlternatePhone] = useState('');
   const [parentEmail, setParentEmail] = useState('');
+  const [annualIncomeRange, setAnnualIncomeRange] = useState('');
 
   // Address
   const [currentAddress, setCurrentAddress] = useState('');
@@ -85,6 +86,7 @@ export default function AdmissionDetailsPage({ admissionId, isEdit = false, onBa
   const [savingNote, setSavingNote] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
   const [showStatusModal, setShowStatusModal] = useState<{ show: boolean, targetStatus: string }>({ show: false, targetStatus: '' });
+  const [showLetter, setShowLetter] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -165,6 +167,7 @@ export default function AdmissionDetailsPage({ admissionId, isEdit = false, onBa
         setParentPhone(data.parent_phone || '');
         setAlternatePhone(data.alternate_phone || '');
         setParentEmail(data.parent_email || '');
+        setAnnualIncomeRange(data.annual_income_range || '');
 
         setCurrentAddress(data.current_address || '');
         setPermanentAddress(data.permanent_address || '');
@@ -286,6 +289,7 @@ export default function AdmissionDetailsPage({ admissionId, isEdit = false, onBa
       parent_phone: parentPhone,
       alternate_phone: alternatePhone,
       parent_email: parentEmail,
+      annual_income_range: annualIncomeRange,
       current_address: currentAddress,
       permanent_address: sameAsCurrent ? currentAddress : permanentAddress,
       previous_school: previousSchool,
@@ -582,9 +586,9 @@ export default function AdmissionDetailsPage({ admissionId, isEdit = false, onBa
       const timelineEvents = [...activityLog];
 
       if (targetStatus === 'Approved' && !admissionNumber) {
-        // Generate Admission Number sequential format: ADM-YYYY-00001
+        // Generate Admission Number sequential format: SMSYYYY00001
         const year = new Date().getFullYear();
-        const prefix = `ADM-${year}-`;
+        const prefix = `SMS${year}`;
         
         // Fetch last admission number
         const { data: lastAdmissions } = await supabase
@@ -596,8 +600,8 @@ export default function AdmissionDetailsPage({ admissionId, isEdit = false, onBa
 
         let nextNum = 1;
         if (lastAdmissions && lastAdmissions.length > 0 && lastAdmissions[0].admission_number) {
-          const parts = lastAdmissions[0].admission_number.split('-');
-          const lastSeq = parseInt(parts[2], 10);
+          const lastNumStr = lastAdmissions[0].admission_number.substring(prefix.length);
+          const lastSeq = parseInt(lastNumStr, 10);
           if (!isNaN(lastSeq)) {
             nextNum = lastSeq + 1;
           }
@@ -642,11 +646,59 @@ export default function AdmissionDetailsPage({ admissionId, isEdit = false, onBa
       if (error) throw error;
 
       // If we approved, let's mark the linked enquiry status as Converted as well (if it exists)
-      if (targetStatus === 'Approved' && enquiryId) {
-        await supabase
-          .from('enquiries')
-          .update({ status: 'Converted' })
-          .eq('id', enquiryId);
+      if (targetStatus === 'Approved') {
+        if (enquiryId) {
+          await supabase
+            .from('enquiries')
+            .update({ status: 'Converted' })
+            .eq('id', enquiryId);
+        }
+
+        // Insert student record into students table
+        const { data: existingStudent } = await supabase
+          .from('students')
+          .select('id')
+          .eq('admission_number', generatedAdmissionNumber)
+          .maybeSingle();
+
+        if (!existingStudent) {
+          // Find a default section for the applied class
+          const { data: sections } = await supabase
+            .from('sections')
+            .select('id')
+            .eq('class_id', gradeApplied)
+            .limit(1);
+
+          const defaultSectionId = sections && sections.length > 0 ? sections[0].id : null;
+
+          if (defaultSectionId) {
+            const { error: studentErr } = await supabase
+              .from('students')
+              .insert([{
+                school_id: schoolId,
+                class_id: gradeApplied,
+                section_id: defaultSectionId,
+                admission_number: generatedAdmissionNumber,
+                date_of_birth: dob,
+                gender: gender,
+                blood_group: bloodGroup
+              }]);
+            
+            if (studentErr) {
+              console.error('Error inserting student record:', studentErr);
+              alert(`Warning: Admission approved, but student record creation failed: ${studentErr.message}`);
+            } else {
+              timelineEvents.push({
+                event: 'Student Profile Activated',
+                timestamp: new Date().toISOString(),
+                staff: staffName,
+                description: `Created active student record for ${firstName} ${lastName} with Admission No: ${generatedAdmissionNumber}`
+              });
+            }
+          } else {
+            alert('Warning: Admission approved, but student profile could not be created because no section is defined for this class. Please create a section under this class first.');
+          }
+        }
       }
 
       setStatus(targetStatus);
@@ -792,6 +844,11 @@ export default function AdmissionDetailsPage({ admissionId, isEdit = false, onBa
                   onClick={() => setShowStatusModal({ show: true, targetStatus: 'Rejected' })}
                 >
                   Reject
+                </button>
+              )}
+              {status === 'Approved' && (
+                <button className="btn btn-primary" style={{ background: 'var(--primary)' }} onClick={() => setShowLetter(true)}>
+                  View Confirmation Letter
                 </button>
               )}
               <button className="btn btn-secondary" onClick={() => window.print()}>
@@ -972,6 +1029,16 @@ export default function AdmissionDetailsPage({ admissionId, isEdit = false, onBa
                 onChange={(e) => setParentEmail(e.target.value)} 
                 disabled={!editing || isLocked} 
               />
+            </div>
+            <div className="form-group">
+              <label>Annual Income Range</label>
+              <select value={annualIncomeRange} onChange={(e) => setAnnualIncomeRange(e.target.value)} disabled={!editing || isLocked}>
+                <option value="">Select Income Range</option>
+                <option value="Under 2 Lakhs">Under 2 Lakhs</option>
+                <option value="2 Lakhs - 5 Lakhs">2 Lakhs - 5 Lakhs</option>
+                <option value="5 Lakhs - 10 Lakhs">5 Lakhs - 10 Lakhs</option>
+                <option value="Above 10 Lakhs">Above 10 Lakhs</option>
+              </select>
             </div>
           </div>
 
@@ -1305,7 +1372,7 @@ export default function AdmissionDetailsPage({ admissionId, isEdit = false, onBa
             <h2>{showStatusModal.targetStatus === 'Approved' ? 'Approve Admission?' : 'Reject Admission?'}</h2>
             <p style={{ margin: '1rem 0 2rem 0' }}>
               {showStatusModal.targetStatus === 'Approved' 
-                ? 'Approving this admission will lock editing of student information and generate a sequence-based Admission ID (ADM-YYYY-00001).'
+                ? 'Approving this admission will lock editing of student information and generate a sequence-based Admission ID (SMSYYYY00001).'
                 : 'Rejecting this admission draft will record the decision in the timeline and notify staff.'}
             </p>
             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
@@ -1321,6 +1388,81 @@ export default function AdmissionDetailsPage({ admissionId, isEdit = false, onBa
                 {saving ? 'Processing...' : 'Confirm Action'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admission Confirmation Letter Modal */}
+      {showLetter && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: '#090d16', zIndex: 3000, overflowY: 'auto', padding: '2rem 1rem' }}>
+          <div style={{ maxWidth: '800px', margin: '0 auto', background: '#fff', color: '#000', padding: '3rem', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', fontFamily: 'serif' }} className="print-area">
+            {/* School Letterhead */}
+            <div style={{ textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: '1.5rem', marginBottom: '2rem' }}>
+              <h1 style={{ margin: '0 0 0.5rem 0', fontSize: '2rem', color: '#1e3a8a', textTransform: 'uppercase', fontFamily: 'sans-serif', fontWeight: 800 }}>Oakridge International School</h1>
+              <p style={{ margin: '0 0 0.25rem 0', fontSize: '0.9rem', color: '#4b5563', fontFamily: 'sans-serif' }}>123 Academic Lane, Campus District | Phone: 555-0199</p>
+              <p style={{ margin: 0, fontSize: '0.9rem', color: '#4b5563', fontFamily: 'sans-serif' }}>Email: admissions@oakridge.edu | Website: www.oakridge.edu</p>
+            </div>
+
+            {/* Letter Metadata */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem', fontSize: '1rem' }}>
+              <div>
+                <strong>Ref No:</strong> {admissionNumber}<br />
+                <strong>Date:</strong> {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <strong>Status:</strong> Approved Admission
+              </div>
+            </div>
+
+            {/* Recipient */}
+            <div style={{ marginBottom: '2rem', fontSize: '1.05rem', lineHeight: '1.5' }}>
+              To,<br />
+              <strong>{parentName}</strong><br />
+              Parent / Guardian of {firstName} {lastName}<br />
+              {currentAddress || 'Registered Address'}
+            </div>
+
+            {/* Subject */}
+            <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '1.15rem', textDecoration: 'underline', marginBottom: '2rem' }}>
+              Subject: Offer of Admission for the Academic Session {new Date().getFullYear()}-{new Date().getFullYear()+1}
+            </div>
+
+            {/* Body */}
+            <div style={{ fontSize: '1.05rem', lineHeight: '1.6', marginBottom: '3rem', textAlign: 'justify' }}>
+              <p>Dear Mr./Ms. {parentName},</p>
+              <p>We are pleased to inform you that the application for admission of your ward, <strong>{firstName} {lastName}</strong>, to <strong>{classes.find(c => c.id === gradeApplied)?.name || 'Grade 1'}</strong> has been reviewed and formally <strong>APPROVED</strong> by the Admissions Committee.</p>
+              <p>The system has generated a permanent Admission Number for your ward: <strong>{admissionNumber}</strong>. Please use this admission number for all future correspondence, academic tracking, and fee transactions.</p>
+              <p>An active student profile has been created for {firstName}. You will receive a separate communication with details for accessing the Parent Portal, academic schedules, homework assignments, and administrative guidelines.</p>
+              <p>We extend a warm welcome to your family to the Oakridge International School community and look forward to a successful academic partnership.</p>
+            </div>
+
+            {/* Signatures */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4rem', fontSize: '1.05rem' }}>
+              <div>
+                <div style={{ height: '60px' }}></div>
+                <div style={{ borderTop: '1px solid #000', width: '200px', paddingTop: '0.5rem' }}>
+                  <strong>Admissions Officer</strong><br />
+                  Oakridge Administration
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ height: '60px' }}></div>
+                <div style={{ borderTop: '1px solid #000', width: '200px', paddingTop: '0.5rem', marginLeft: 'auto' }}>
+                  <strong>Principal</strong><br />
+                  Oakridge International School
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '2rem' }} className="no-print">
+            <button className="btn btn-secondary" onClick={() => setShowLetter(false)}>
+              Back to Details
+            </button>
+            <button className="btn btn-primary" onClick={() => window.print()}>
+              Print Letter
+            </button>
           </div>
         </div>
       )}
