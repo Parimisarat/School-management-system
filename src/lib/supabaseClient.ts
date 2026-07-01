@@ -4,3 +4,9 @@ const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL || 'https://your-
 const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY || 'your-anon-key';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+export const supabaseM34 = createClient(supabaseUrl, supabaseAnonKey, {
+  db: {
+    schema: 'm3_m4'
+  }
+});
