@@ -170,28 +170,27 @@ export default function StudentPortal() {
 
   async function fetchNotices() {
     try {
-      const { data: targetedNotices } = await supabase
-        .from('notice_targets')
+      const { data, error } = await supabase
+        .from('notices')
         .select(`
-          notice_id,
-          notices (
-            id,
-            title,
-            content,
-            created_at,
-            profiles!notices_created_by_fkey ( first_name, last_name )
-          )
+          id,
+          title,
+          content,
+          is_urgent,
+          created_at,
+          class_id,
+          section_id,
+          target_audience,
+          profiles!notices_created_by_fkey ( first_name, last_name )
         `)
-        .eq('target_role', 'student')
-        .or(`class_id.eq.${student.class_id},class_id.is.null`);
+        .or(`target_audience.eq.All,and(target_audience.eq.Class,class_id.eq.${student.class_id}),and(target_audience.eq.Section,section_id.eq.${student.section_id})`)
+        .order('created_at', { ascending: false });
 
-      const uniqueNotices = targetedNotices
-        ?.map((t: any) => t.notices)
-        .filter((n: any, index: number, self: any[]) => n && self.findIndex(t => t.id === n.id) === index)
-        .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-      setNotices(uniqueNotices || []);
-    } catch (e) {}
+      if (error) throw error;
+      setNotices(data || []);
+    } catch (e) {
+      console.error('Error fetching notices:', e);
+    }
   }
 
   const handleFileUpload = async () => {
@@ -553,29 +552,71 @@ export default function StudentPortal() {
             </div>
           )}
 
-          {activeTab === 'notices' && (
-            <div className="glass-card">
-              <h3 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>Notice Board Bulletin</h3>
-              {notices.length === 0 ? (
-                <p>No notices posted.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  {notices.map((n) => (
-                    <div key={n.id} style={{ background: 'rgba(0,0,0,0.15)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                        <h4 style={{ margin: 0, color: '#fff', fontSize: '1.1rem' }}>{n.title}</h4>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Date: {new Date(n.created_at).toLocaleDateString()}</span>
-                      </div>
-                      <p style={{ fontSize: '0.9rem', color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>{n.content}</p>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '1rem', textAlign: 'right' }}>
-                        Announced by: {n.profiles?.first_name} {n.profiles?.last_name}
-                      </p>
+          {activeTab === 'notices' && (() => {
+            const now = new Date();
+            const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+            const activeNotices = notices.filter(n => new Date(n.created_at) >= ninetyDaysAgo);
+            const archivedNotices = notices.filter(n => new Date(n.created_at) < ninetyDaysAgo);
+
+            return (
+              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                <div>
+                  <h3 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>Notice Board Bulletin</h3>
+                  {activeNotices.length === 0 ? (
+                    <p style={{ color: 'var(--text-secondary)' }}>No active notices at this time.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                      {activeNotices.map((n) => (
+                        <div 
+                          key={n.id} 
+                          style={{ 
+                            background: 'rgba(0,0,0,0.15)', 
+                            padding: '1.5rem', 
+                            borderRadius: '12px', 
+                            border: n.is_urgent ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid var(--glass-border)',
+                            position: 'relative'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              {n.is_urgent && (
+                                <span style={{ background: '#ef4444', color: '#fff', fontSize: '0.7rem', padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                                  Urgent
+                                </span>
+                              )}
+                              <h4 style={{ margin: 0, color: '#fff', fontSize: '1.1rem' }}>{n.title}</h4>
+                            </div>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Date: {new Date(n.created_at).toLocaleDateString()}</span>
+                          </div>
+                          <p style={{ fontSize: '0.9rem', color: '#cbd5e1', whiteSpace: 'pre-wrap', margin: '0.5rem 0' }}>{n.content}</p>
+                          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '1rem', textAlign: 'right', margin: 0 }}>
+                            Announced by: {n.profiles?.first_name} {n.profiles?.last_name}
+                          </p>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
-            </div>
-          )}
+
+                {archivedNotices.length > 0 && (
+                  <div>
+                    <h4 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', marginBottom: '1rem', color: 'var(--text-secondary)' }}>Archived Notices (Older than 90 days)</h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                      {archivedNotices.map((n) => (
+                        <div key={n.id} style={{ background: 'rgba(0,0,0,0.08)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                            <h5 style={{ margin: 0, color: '#94a3b8' }}>{n.title}</h5>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{new Date(n.created_at).toLocaleDateString()}</span>
+                          </div>
+                          <p style={{ fontSize: '0.85rem', color: '#94a3b8', whiteSpace: 'pre-wrap' }}>{n.content}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Back button */}
           {activeTab !== 'dashboard' && (

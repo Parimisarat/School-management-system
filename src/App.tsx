@@ -18,13 +18,15 @@ import HomeworkDashboard from './pages/HomeworkDashboard';
 import ParentPortal from './pages/ParentPortal';
 import StudentPortal from './pages/StudentPortal';
 import AdminPtmDashboard from './pages/AdminPtmDashboard';
+import Student360Profile from './pages/Student360Profile';
+import DisciplineMonitor from './pages/DisciplineMonitor';
+import AdminCommunication from './pages/AdminCommunication';
 import StudentDirectory from './pages/StudentDirectory';
 import StudentOnboarding from './pages/StudentOnboarding';
-import Student360Profile from './pages/Student360Profile';
 
 import { User, LogOut, Key, UserCheck } from 'lucide-react';
 
-type ViewType = 'public' | 'login' | 'forgot-password' | 'reset-password' | 'change-password' | 'admin' | 'enquiry-details' | 'admissions' | 'admission-new' | 'admission-details' | 'admission-edit' | 'teacher' | 'homework' | 'parent' | 'student' | 'admin-ptm' | 'students' | 'student-onboard' | 'student-details';
+type ViewType = 'public' | 'login' | 'forgot-password' | 'reset-password' | 'change-password' | 'admin' | 'enquiry-details' | 'admissions' | 'admission-new' | 'admission-details' | 'admission-edit' | 'teacher' | 'homework' | 'parent' | 'student' | 'admin-ptm' | 'students' | 'student-onboard' | 'student-details' | 'discipline' | 'admin-communication';
 
 function AppContent() {
   const { session, user, role, schoolName, loading, logout } = useAuth();
@@ -122,6 +124,10 @@ function AppContent() {
         setView('parent');
       } else if (hash === '#/student') {
         setView('student');
+      } else if (hash === '#/discipline') {
+        setView('discipline');
+      } else if (hash === '#/admin/communication') {
+        setView('admin-communication');
       }
     };
 
@@ -184,7 +190,9 @@ function AppContent() {
         'student': ['student', 'super_admin'],
         'students': ['super_admin', 'admin_staff'],
         'student-onboard': ['super_admin', 'admin_staff'],
-        'student-details': ['super_admin', 'admin_staff', 'class_teacher', 'parent', 'student']
+        'student-details': ['super_admin', 'admin_staff', 'class_teacher', 'parent', 'student'],
+        'discipline': ['super_admin', 'admin_staff', 'class_teacher', 'subject_teacher', 'parent'],
+        'admin-communication': ['super_admin', 'admin_staff']
       };
 
       const allowedRoles = authRules[view];
@@ -277,6 +285,16 @@ function AppContent() {
                     PTM Scheduling
                   </button>
                   <button 
+                    className={`btn ${view === 'admin-communication' ? 'btn-primary' : 'btn-secondary'}`} 
+                    onClick={() => {
+                      window.location.hash = '#/admin/communication';
+                      setView('admin-communication');
+                    }}
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                  >
+                    Communication
+                  </button>
+                  <button 
                     className={`btn ${['students', 'student-onboard', 'student-details'].includes(view) ? 'btn-primary' : 'btn-secondary'}`} 
                     onClick={() => window.location.hash = '#/students'}
                     style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
@@ -293,6 +311,16 @@ function AppContent() {
                     style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
                   >
                     Admissions
+                  </button>
+                  <button 
+                    className={`btn ${view === 'admin-communication' ? 'btn-primary' : 'btn-secondary'}`} 
+                    onClick={() => {
+                      window.location.hash = '#/admin/communication';
+                      setView('admin-communication');
+                    }}
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                  >
+                    Communication
                   </button>
                   <button 
                     className={`btn ${['students', 'student-onboard', 'student-details'].includes(view) ? 'btn-primary' : 'btn-secondary'}`} 
@@ -337,6 +365,16 @@ function AppContent() {
                   style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
                 >
                   Student Portal
+                </button>
+              )}
+
+              {role && role !== 'student' && (
+                <button 
+                  className={`btn ${view === 'discipline' ? 'btn-primary' : 'btn-secondary'}`} 
+                  onClick={() => window.location.hash = '#/discipline'}
+                  style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                >
+                  Discipline
                 </button>
               )}
 
@@ -448,15 +486,15 @@ function AppContent() {
 
         {view === 'students' && (
           <StudentDirectory 
-            onSelectStudent={(id) => { setSelectedId(id); window.location.hash = `#/students/${id}`; }} 
-            onOnboardStudent={(id) => { setSelectedId(id); window.location.hash = `#/students/onboard/${id}`; }}
+            onSelectStudent={(id: string) => { setSelectedId(id); window.location.hash = `#/students/${id}`; }} 
+            onOnboardStudent={(id: string) => { setSelectedId(id); window.location.hash = `#/students/onboard/${id}`; }}
           />
         )}
         {view === 'student-onboard' && selectedId && (
           <StudentOnboarding 
             admissionId={selectedId} 
             onBack={() => { window.location.hash = '#/students'; }}
-            onSuccess={(studentId) => { setSelectedId(studentId); window.location.hash = `#/students/${studentId}`; }}
+            onSuccess={(studentId: string) => { setSelectedId(studentId); window.location.hash = `#/students/${studentId}`; }}
           />
         )}
         {view === 'student-details' && selectedId && (
@@ -471,6 +509,8 @@ function AppContent() {
         {view === 'parent' && <ParentPortal />}
         {view === 'student' && <StudentPortal />}
         {view === 'admin-ptm' && <AdminPtmDashboard />}
+        {view === 'discipline' && <DisciplineMonitor />}
+        {view === 'admin-communication' && <AdminCommunication />}
       </main>
 
       {/* Profile Details Modal */}
