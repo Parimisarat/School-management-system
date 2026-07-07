@@ -5,7 +5,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import EnquiryDetailsPage from './pages/EnquiryDetailsPage';
 import AdmissionDashboard from './pages/AdmissionDashboard';
 import AdmissionDetailsPage from './pages/AdmissionDetailsPage';
-
+//vishnu
 // Auth pages
 import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
@@ -17,10 +17,16 @@ import TeacherDashboard from './pages/TeacherDashboard';
 import HomeworkDashboard from './pages/HomeworkDashboard';
 import ParentPortal from './pages/ParentPortal';
 import StudentPortal from './pages/StudentPortal';
+import AdminPtmDashboard from './pages/AdminPtmDashboard';
+import Student360Profile from './pages/Student360Profile';
+import DisciplineMonitor from './pages/DisciplineMonitor';
+import AdminCommunication from './pages/AdminCommunication';
+import StudentDirectory from './pages/StudentDirectory';
+import StudentOnboarding from './pages/StudentOnboarding';
 
 import { User, LogOut, Key, UserCheck } from 'lucide-react';
 
-type ViewType = 'public' | 'login' | 'forgot-password' | 'reset-password' | 'change-password' | 'admin' | 'enquiry-details' | 'admissions' | 'admission-new' | 'admission-details' | 'admission-edit' | 'teacher' | 'homework' | 'parent' | 'student';
+type ViewType = 'public' | 'login' | 'forgot-password' | 'reset-password' | 'change-password' | 'admin' | 'enquiry-details' | 'admissions' | 'admission-new' | 'admission-details' | 'admission-edit' | 'teacher' | 'homework' | 'parent' | 'student' | 'admin-ptm' | 'students' | 'student-onboard' | 'student-details' | 'discipline' | 'admin-communication';
 
 function AppContent() {
   const { session, user, role, schoolName, loading, logout } = useAuth();
@@ -85,11 +91,31 @@ function AppContent() {
         return;
       }
 
+      // Match students
+      if (hash === '#/students') {
+        setView('students');
+        return;
+      }
+      const onboardMatch = hash.match(/^#\/students\/onboard\/(.+)$/);
+      if (onboardMatch) {
+        setSelectedId(onboardMatch[1]);
+        setView('student-onboard');
+        return;
+      }
+      const studentMatch = hash.match(/^#\/students\/(.+)$/);
+      if (studentMatch) {
+        setSelectedId(studentMatch[1]);
+        setView('student-details');
+        return;
+      }
+
       // Exact matches
       if (hash === '#/admissions') {
         setView('admissions');
       } else if (hash === '#/admin') {
         setView('admin');
+      } else if (hash === '#/admin/ptm') {
+        setView('admin-ptm');
       } else if (hash === '#/teacher') {
         setView('teacher');
       } else if (hash === '#/homework') {
@@ -98,6 +124,10 @@ function AppContent() {
         setView('parent');
       } else if (hash === '#/student') {
         setView('student');
+      } else if (hash === '#/discipline') {
+        setView('discipline');
+      } else if (hash === '#/admin/communication') {
+        setView('admin-communication');
       }
     };
 
@@ -148,6 +178,7 @@ function AppContent() {
       // Role authorization check
       const authRules: { [key in ViewType]?: string[] } = {
         'admin': ['super_admin'],
+        'admin-ptm': ['super_admin'],
         'enquiry-details': ['super_admin'],
         'admissions': ['super_admin', 'admin_staff'],
         'admission-new': ['super_admin', 'admin_staff'],
@@ -156,7 +187,12 @@ function AppContent() {
         'teacher': ['class_teacher', 'super_admin'],
         'homework': ['subject_teacher', 'super_admin'],
         'parent': ['parent', 'super_admin'],
-        'student': ['student', 'super_admin']
+        'student': ['student', 'super_admin'],
+        'students': ['super_admin', 'admin_staff'],
+        'student-onboard': ['super_admin', 'admin_staff'],
+        'student-details': ['super_admin', 'admin_staff', 'class_teacher', 'parent', 'student'],
+        'discipline': ['super_admin', 'admin_staff', 'class_teacher', 'subject_teacher', 'parent'],
+        'admin-communication': ['super_admin', 'admin_staff']
       };
 
       const allowedRoles = authRules[view];
@@ -238,16 +274,62 @@ function AppContent() {
                   >
                     Admissions
                   </button>
+                  <button 
+                    className={`btn ${view === 'admin-ptm' ? 'btn-primary' : 'btn-secondary'}`} 
+                    onClick={() => {
+                      window.location.hash = '#/admin/ptm';
+                      setView('admin-ptm');
+                    }}
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                  >
+                    PTM Scheduling
+                  </button>
+                  <button 
+                    className={`btn ${view === 'admin-communication' ? 'btn-primary' : 'btn-secondary'}`} 
+                    onClick={() => {
+                      window.location.hash = '#/admin/communication';
+                      setView('admin-communication');
+                    }}
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                  >
+                    Communication
+                  </button>
+                  <button 
+                    className={`btn ${['students', 'student-onboard', 'student-details'].includes(view) ? 'btn-primary' : 'btn-secondary'}`} 
+                    onClick={() => window.location.hash = '#/students'}
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                  >
+                    Students
+                  </button>
                 </>
               )}
               {role === 'admin_staff' && (
-                <button 
-                  className={`btn ${['admissions', 'admission-new', 'admission-details', 'admission-edit'].includes(view) ? 'btn-primary' : 'btn-secondary'}`} 
-                  onClick={navigateToAdmissions}
-                  style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-                >
-                  Admissions
-                </button>
+                <>
+                  <button 
+                    className={`btn ${['admissions', 'admission-new', 'admission-details', 'admission-edit'].includes(view) ? 'btn-primary' : 'btn-secondary'}`} 
+                    onClick={navigateToAdmissions}
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                  >
+                    Admissions
+                  </button>
+                  <button 
+                    className={`btn ${view === 'admin-communication' ? 'btn-primary' : 'btn-secondary'}`} 
+                    onClick={() => {
+                      window.location.hash = '#/admin/communication';
+                      setView('admin-communication');
+                    }}
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                  >
+                    Communication
+                  </button>
+                  <button 
+                    className={`btn ${['students', 'student-onboard', 'student-details'].includes(view) ? 'btn-primary' : 'btn-secondary'}`} 
+                    onClick={() => window.location.hash = '#/students'}
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                  >
+                    Students
+                  </button>
+                </>
               )}
               {role === 'class_teacher' && (
                 <button 
@@ -283,6 +365,16 @@ function AppContent() {
                   style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
                 >
                   Student Portal
+                </button>
+              )}
+
+              {role && role !== 'student' && (
+                <button 
+                  className={`btn ${view === 'discipline' ? 'btn-primary' : 'btn-secondary'}`} 
+                  onClick={() => window.location.hash = '#/discipline'}
+                  style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                >
+                  Discipline
                 </button>
               )}
 
@@ -392,10 +484,33 @@ function AppContent() {
           <AdmissionDetailsPage admissionId={selectedId} isEdit onBack={navigateToAdmissions} />
         )}
 
+        {view === 'students' && (
+          <StudentDirectory 
+            onSelectStudent={(id: string) => { setSelectedId(id); window.location.hash = `#/students/${id}`; }} 
+            onOnboardStudent={(id: string) => { setSelectedId(id); window.location.hash = `#/students/onboard/${id}`; }}
+          />
+        )}
+        {view === 'student-onboard' && selectedId && (
+          <StudentOnboarding 
+            admissionId={selectedId} 
+            onBack={() => { window.location.hash = '#/students'; }}
+            onSuccess={(studentId: string) => { setSelectedId(studentId); window.location.hash = `#/students/${studentId}`; }}
+          />
+        )}
+        {view === 'student-details' && selectedId && (
+          <Student360Profile 
+            studentId={selectedId} 
+            onBack={() => { window.location.hash = '#/students'; }}
+          />
+        )}
+
         {view === 'teacher' && <TeacherDashboard />}
         {view === 'homework' && <HomeworkDashboard />}
         {view === 'parent' && <ParentPortal />}
         {view === 'student' && <StudentPortal />}
+        {view === 'admin-ptm' && <AdminPtmDashboard />}
+        {view === 'discipline' && <DisciplineMonitor />}
+        {view === 'admin-communication' && <AdminCommunication />}
       </main>
 
       {/* Profile Details Modal */}
