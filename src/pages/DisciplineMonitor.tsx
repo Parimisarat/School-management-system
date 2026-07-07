@@ -218,7 +218,7 @@ export default function DisciplineMonitor() {
         student:students (
           id,
           roll_number,
-          profiles (first_name, last_name),
+          profiles!students_profile_id_fkey (first_name, last_name),
           classes (name),
           sections (name)
         ),
@@ -247,7 +247,7 @@ export default function DisciplineMonitor() {
       .select(`
         id,
         roll_number,
-        profiles (first_name, last_name),
+        profiles!students_profile_id_fkey (first_name, last_name),
         classes (name),
         sections (id, name, class_teacher_id)
       `);

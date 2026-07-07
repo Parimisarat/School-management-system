@@ -36,24 +36,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // 1. Restore active session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
       if (session) {
+        setSession(session);
         loadUserDetails(session.user.id);
       } else {
-        setLoading(false);
+        // Attempt to load from stored mock session
+        const storedUser = localStorage.getItem('schoolos_mock_user');
+        const storedRole = localStorage.getItem('schoolos_mock_role');
+        const storedSession = localStorage.getItem('schoolos_mock_session');
+        if (storedUser && storedRole && storedSession) {
+          setSession(JSON.parse(storedSession));
+          setUser(JSON.parse(storedUser));
+          setRole(storedRole);
+          setSchoolName('Oakridge International School');
+          setSchoolId('11111111-1111-1111-1111-111111111111');
+          setLoading(false);
+        } else {
+          setLoading(false);
+        }
       }
     });
 
     // 2. Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
       if (session) {
+        setSession(session);
         await loadUserDetails(session.user.id);
       } else {
-        setUser(null);
-        setRole(null);
-        setSchoolName(null);
-        setSchoolId(null);
+        // If there is a mock session stored, preserve it
+        const storedSession = localStorage.getItem('schoolos_mock_session');
+        if (!storedSession) {
+          setUser(null);
+          setRole(null);
+          setSchoolName(null);
+          setSchoolId(null);
+          setSession(null);
+        }
         setLoading(false);
       }
     });
@@ -286,6 +304,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } as any,
     };
 
+    localStorage.setItem('schoolos_mock_user', JSON.stringify(mockUser));
+    localStorage.setItem('schoolos_mock_role', mockRole);
+    localStorage.setItem('schoolos_mock_session', JSON.stringify(mockSession));
+
     setSession(mockSession);
     setUser(mockUser);
     setRole(mockRole);
@@ -301,6 +323,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       console.warn('Error calling auth signout:', e);
     }
+    localStorage.removeItem('schoolos_mock_user');
+    localStorage.removeItem('schoolos_mock_role');
+    localStorage.removeItem('schoolos_mock_session');
     setUser(null);
     setRole(null);
     setSchoolName(null);
