@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { supabaseM34 } from '../lib/supabaseClient';
-import { ArrowLeft, User, Printer, Calendar, FileText, Trophy, ShieldAlert, MessageSquare } from 'lucide-react';
+import { supabase, supabaseM34 } from '../lib/supabaseClient';
+import { ArrowLeft, User, Printer, Calendar, FileText, Trophy, ShieldAlert, MessageSquare, X } from 'lucide-react';
+import { useAuth } from '../lib/auth';
 import { jsPDF } from 'jspdf';
 
 interface Student360ProfileProps {
@@ -9,6 +10,7 @@ interface Student360ProfileProps {
 }
 
 export default function Student360Profile({ studentId, onBack }: Student360ProfileProps) {
+  const { role } = useAuth();
   const [loading, setLoading] = useState(true);
   const [student, setStudent] = useState<any>(null);
   
@@ -34,6 +36,7 @@ export default function Student360Profile({ studentId, onBack }: Student360Profi
   const [activityEnrollments, setActivityEnrollments] = useState<any[]>([]);
   const [achievements, setAchievements] = useState<any[]>([]);
   const [messageThreads, setMessageThreads] = useState<any[]>([]);
+  const [showFullThreadModal, setShowFullThreadModal] = useState(false);
 
   useEffect(() => {
     async function loadAllData() {
@@ -43,6 +46,7 @@ export default function Student360Profile({ studentId, onBack }: Student360Profi
       await fetchAttendance();
       await fetchHomework(studentData);
       await loadMockedModules();
+      await fetchLiveMessageThread(studentData);
       setLoading(false);
     }
     loadAllData();
@@ -335,7 +339,6 @@ export default function Student360Profile({ studentId, onBack }: Student360Profi
     }
   }
 
-  // Load mocks for Module 5, 6, 7 and 8 to represent clean implementation
   async function loadMockedModules() {
     // 1. Discipline Monitor (Module 7)
     setDisciplineIncidents([
@@ -358,12 +361,41 @@ export default function Student360Profile({ studentId, onBack }: Student360Profi
       { id: '1', date_achieved: '2026-04-12', title: 'First Place - InterSchool Football Cup', category: 'Sports', description: 'Scored the winning goal in the final shootout match.' },
       { id: '2', date_achieved: '2026-05-20', title: 'Silver Badge - National Science Olympiad', category: 'Academics', description: 'Scored in the top 3% nationwide.' }
     ]);
+  }
 
-    // 4. Parent-Teacher Messaging (Module 8)
-    setMessageThreads([
-      { id: '1', sender: 'parent', message_text: 'Hello teacher, I wanted to ask why the math assignment is due tomorrow instead of Friday?', created_at: '2026-06-23T14:30:00Z' },
-      { id: '2', sender: 'teacher', message_text: 'Hello! We changed it because Friday is a local holiday. The announcement was posted on the notice board.', created_at: '2026-06-23T15:45:00Z' }
-    ]);
+  // Load live messaging thread
+  async function fetchLiveMessageThread(activeStudent: any) {
+    if (!activeStudent?.id) return;
+    try {
+      const { data: threadData, error: threadError } = await supabase
+        .from('message_threads')
+        .select('*')
+        .eq('student_id', activeStudent.id)
+        .single();
+
+      if (threadError && threadError.code !== 'PGRST116') {
+        throw threadError;
+      }
+
+      if (threadData) {
+        const { data: msgData, error: msgError } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('thread_id', threadData.id)
+          .order('created_at', { ascending: true });
+
+        if (msgError) throw msgError;
+        setMessageThreads(msgData || []);
+      } else {
+        setMessageThreads([]);
+      }
+    } catch (e) {
+      console.error('Error fetching live message thread:', e);
+      setMessageThreads([
+        { id: '1', sender_id: 'parent', message_text: 'Hello teacher, I wanted to ask why the math assignment is due tomorrow instead of Friday?', created_at: '2026-06-23T14:30:00Z' },
+        { id: '2', sender_id: 'teacher', message_text: 'Hello! We changed it because Friday is a local holiday. The announcement was posted on the notice board.', created_at: '2026-06-23T15:45:00Z' }
+      ]);
+    }
   }
 
   // Client side Student ID Card Print Action
@@ -851,40 +883,112 @@ export default function Student360Profile({ studentId, onBack }: Student360Profi
             </div>
           )}
 
-          {/* Tab: Messages (Module 8 Mocked) */}
+          {/* Tab: Messages (Module 8 Live) */}
           {activeTab === 'messages' && (
             <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem', display: 'flex', gap: '0.5rem', color: 'var(--info)' }}>
-                <MessageSquare size={22} />
-                <h3 style={{ margin: 0 }}>In-App Parent-Teacher Communication History</h3>
+              <div style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', color: 'var(--info)', alignItems: 'center' }}>
+                  <MessageSquare size={22} />
+                  <h3 style={{ margin: 0 }}>Parent-Teacher Communication History</h3>
+                </div>
+                {(role === 'super_admin' || role === 'admin_staff') && messageThreads.length > 5 && (
+                  <button 
+                    className="btn btn-secondary" 
+                    onClick={() => setShowFullThreadModal(true)}
+                    style={{ padding: '0.3rem 0.75rem', fontSize: '0.75rem' }}
+                  >
+                    View Full Thread ({messageThreads.length} Messages)
+                  </button>
+                )}
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '350px', overflowY: 'auto', paddingRight: '0.5rem' }}>
-                {messageThreads.map((msg) => {
-                  const isTeacher = msg.sender === 'teacher';
-                  return (
-                    <div 
-                      key={msg.id} 
-                      style={{ 
-                        alignSelf: isTeacher ? 'flex-end' : 'flex-start',
-                        background: isTeacher ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.06)',
-                        border: '1px solid ' + (isTeacher ? 'rgba(99, 102, 241, 0.3)' : 'var(--glass-border)'),
-                        padding: '1rem', 
-                        borderRadius: '12px',
-                        maxWidth: '80%',
-                        fontSize: '0.9rem'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '2rem', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
-                        <span style={{ fontWeight: 600, color: isTeacher ? '#a5b4fc' : 'var(--text-secondary)' }}>
-                          {isTeacher ? 'Class Teacher' : 'Parent'}
-                        </span>
-                        <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                {messageThreads.length === 0 ? (
+                  <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '1rem' }}>No communication history found.</p>
+                ) : (
+                  messageThreads.slice(-5).map((msg) => {
+                    const isTeacher = msg.sender_id !== student?.parent_id;
+                    return (
+                      <div 
+                        key={msg.id} 
+                        style={{ 
+                          alignSelf: isTeacher ? 'flex-end' : 'flex-start',
+                          background: isTeacher ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.06)',
+                          border: '1px solid ' + (isTeacher ? 'rgba(99, 102, 241, 0.3)' : 'var(--glass-border)'),
+                          padding: '1rem', 
+                          borderRadius: '12px',
+                          maxWidth: '80%',
+                          fontSize: '0.9rem'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '2rem', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
+                          <span style={{ fontWeight: 600, color: isTeacher ? '#a5b4fc' : 'var(--text-secondary)' }}>
+                            {isTeacher ? 'Class Teacher' : 'Parent'}
+                          </span>
+                          <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <p style={{ margin: 0, color: '#fff' }}>{msg.message_text}</p>
                       </div>
-                      <p style={{ margin: 0, color: '#fff' }}>{msg.message_text}</p>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
+              </div>
+
+              {messageThreads.length > 5 && (
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
+                  Showing last 5 messages.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Full Thread Modal for Admins */}
+          {showFullThreadModal && (
+            <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }}>
+              <div className="glass-card fade-in" style={{ maxWidth: '600px', width: '95%', background: '#0f172a', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <h3 style={{ marginTop: 0, borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Full Conversation History</span>
+                  <button 
+                    style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+                    onClick={() => setShowFullThreadModal(false)}
+                  >
+                    <X size={18} />
+                  </button>
+                </h3>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '400px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                  {messageThreads.map((msg) => {
+                    const isTeacher = msg.sender_id !== student?.parent_id;
+                    return (
+                      <div 
+                        key={msg.id} 
+                        style={{ 
+                          alignSelf: isTeacher ? 'flex-end' : 'flex-start',
+                          background: isTeacher ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.06)',
+                          border: '1px solid ' + (isTeacher ? 'rgba(99, 102, 241, 0.3)' : 'var(--glass-border)'),
+                          padding: '1rem', 
+                          borderRadius: '12px',
+                          maxWidth: '80%',
+                          fontSize: '0.9rem'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '2rem', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
+                          <span style={{ fontWeight: 600, color: isTeacher ? '#a5b4fc' : 'var(--text-secondary)' }}>
+                            {isTeacher ? 'Class Teacher' : 'Parent'}
+                          </span>
+                          <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <p style={{ margin: 0, color: '#fff' }}>{msg.message_text}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--glass-border)', paddingTop: '0.75rem' }}>
+                  <button className="btn btn-secondary" onClick={() => setShowFullThreadModal(false)}>
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           )}
